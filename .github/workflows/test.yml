@@ -3,6 +3,7 @@ name: Test
 
 on:
   push:
+    branches: ["**"]  # run on every push to any branch
   pull_request:
     branches: [master]
 
@@ -33,7 +34,6 @@ jobs:
         run: poetry run pytest tests/
 
   build:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -49,5 +49,7 @@ jobs:
       # install dependencies
       - name: Install dependencies
         run: poetry install
+      - name: Run tests
+        run: poetry run pytest tests/
       - name: Build Python package
         run: poetry build
