@@ -1,20 +1,96 @@
 """
 This Python module will return the name, season, week number and liturgical
-colour for any day in the Gregorian calendar, according to the Anglican
-tradition of the Church of England.
+colour for any day in the Gregorian calendar, according to the liturgical
+calendar of The Episcopal Church (USA) as set out in the 1979 Book of
+Common Prayer (and its 2020 revisions) together with Lesser Feasts and
+Fasts (2024).
 """
 
 import sys
-from datetime import datetime, date
-from .funcs import get_easter, get_advent_sunday, date_to_days, day_of_week, add_delta_days, colour_code, colour_code_rgbw, sunday_name
+from datetime import datetime, date, timedelta
+from functools import lru_cache
+from .funcs import get_easter, get_advent_sunday, date_to_days, day_of_week, colour_code, colour_code_rgbw, sunday_name
 from .feasts import lookup_feast
 
 ##########################################################################
 
+def _first_ember_days(year, month, anchor_day, target_weekdays):
+    """
+    Returns the set of (month, day) tuples for the first occurrences of each
+    weekday in `target_weekdays` strictly after the anchor date.
+    """
+    anchor = date(year, month, anchor_day)
+    anchor_dow = (anchor.weekday() + 1) % 7  # 0=Sunday
+    result = set()
+    for t in target_weekdays:
+        delta = (t - anchor_dow) % 7
+        if delta == 0:
+            delta = 7
+        d = anchor + timedelta(days=delta)
+        result.add((d.month, d.day))
+    return result
+
+@lru_cache(maxsize=8)
+def _calendar_observances(year):
+    """Schedule commemorations together on the next weekday free of major feasts.
+
+    Native commemorations precede transferred ones of equal rank. Major feasts
+    occupy a day alone, so displaced lesser feasts wait past them (for example,
+    Henry Martyn waits past Saint Luke on 19 October 2026).
+    """
+    appointments = {}
+    pending = []
+    # Include the preceding year so transfers across New Year are resolved.
+    current = date(year - 1, 1, 1)
+    end = date(year, 12, 31)
+    while current <= end:
+        easterm, easterd = get_easter(current.year)
+        offset = (current - date(current.year, easterm, easterd)).days
+        movable = lookup_feast(offset) or []
+        fixed = lookup_feast(10000 + 100 * current.month + current.day) or []
+        native = movable + fixed
+        if current.month == 11 and current.weekday() == 3 and 22 <= current.day <= 28:
+            native.append({ 'name': 'Thanksgiving Day', 'colour': 'white',
+                            'url': 'https://en.wikipedia.org/wiki/Thanksgiving_(United_States)',
+                            'prec': 7, 'type': 'Holy Day', 'source': 'BCP 1979',
+                            'type_url': 'https://en.wikipedia.org/wiki/The_Calendar_of_the_Church_Year' })
+        sunday = current.weekday() == 6
+        major = sorted((f for f in native if f['prec'] >= 7),
+                       key=lambda f: f['prec'], reverse=True)
+        observed = []
+        newly_displaced = []
+        if major and (not sunday or major[0]['prec'] >= 8):
+            observed.append(major[0])
+        elif not sunday:
+            waiting_major = next((f for f in pending if f['prec'] >= 7), None)
+            if waiting_major is not None:
+                observed.append(waiting_major)
+                pending.remove(waiting_major)
+        blocked = sunday or bool(observed)
+        for feast in native:
+            if feast in observed:
+                continue
+            if blocked:
+                newly_displaced.append(feast)
+            else:
+                observed.append(feast)
+        if not blocked:
+            observed.extend(pending)
+            pending = []
+        for feast in newly_displaced:
+            carried = dict(feast)
+            carried['name'] += ' (transferred)'
+            pending.append(carried)
+        appointments[current] = (tuple(observed), tuple(newly_displaced))
+        current += timedelta(days=1)
+    return appointments
+
 def liturgical_calendar(s_date: str, transferred: bool = False):
     """
-    Return the liturgical colour for a given day
-    This func contains the main logic
+    Return a precedence-ordered tuple of observance dictionaries for a date.
+
+    Plain weekdays return one seasonal dictionary with an empty name.
+    With transferred=True, return the unrendered feasts displaced on that date.
     """
 
     # s_date could in a variety of formats
@@ -38,8 +114,6 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     day = f_date.day
     dayofweek = day_of_week(year, month, day)
 
-    #die "Need to specify year, month and day" unless $y and $m and $d;
-
     # Calculate some values in Julian date
     days = date_to_days(year, month, day)
     easterm, easterd = get_easter(year)
@@ -51,52 +125,57 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     #  dependent upon the movable date of the Sunday of the Resurrection or
     #  Easter Day; the other, upon the fixed date of December 25, the Feast
     #  of our Lord's Nativity or Christmas Day."
-    easter_point = days-easterday
+    easter_point = days - easterday
     christmas_point = 0
 
     # We will store the amount of time until (-ve) or since (+ve) Christmas in
     # christmas_point. Let's make the cut-off date the end of February,
     # since we'll be dealing with Easter-based dates after that, and it
     # avoids the problems of considering leap years.
-    if month>2:
+    if month > 2:
         christmas_point = days - date_to_days(year, 12, 25)
     else:
-        christmas_point = days - date_to_days(year-1, 12, 25)
+        christmas_point = days - date_to_days(year - 1, 12, 25)
 
     # First, figure out the season.
     season = ''
+    season_url = ''
     weekno = None
 
     advent_sunday = get_advent_sunday(year)
 
-    # Break up the liturgical year into seasons, starting at Advent
-    # Set weekno=0 to disable week numbers for that season
+    # The First Sunday after the Epiphany is the Baptism of our Lord, and
+    # All Saints' Day may always be observed on the Sunday following
+    # November 1 (BCP 1979, p. 15). Both are computed relative to Christmas.
+    baptism_sunday = 12 + ((7 - day_of_week(year, 1, 6)) % 7 or 7)
+    all_saints_sunday = -54 + (7 - day_of_week(year, 11, 1)) % 7
+
+    # The Sundays in the Season after Pentecost are designated "Proper N"
+    # where N = 1 is the Sunday closest to May 11 (BCP 1979, p. 157-158).
+    may11 = date_to_days(year, 5, 11)
+    m11dow = day_of_week(year, 5, 11)
+    proper_anchor = may11 - m11dow if m11dow <= 3 else may11 + (7 - m11dow)
+
+    # Break up the liturgical year into seasons, starting at Advent.
+    # The Episcopal Church observes no Septuagesima ("before Lent") season:
+    # the Epiphany season runs simply to Ash Wednesday.
     if christmas_point >= advent_sunday and christmas_point <= -1:
         season = 'Advent'
         season_url = 'https://en.wikipedia.org/wiki/Advent'
-        weekno = 1 + (christmas_point-advent_sunday) // 7
+        weekno = 1 + (christmas_point - advent_sunday) // 7
     elif christmas_point >= 0 and christmas_point <= 11:
         # The Twelve Days of Christmas.
         season = 'Christmas'
         season_url = 'https://en.wikipedia.org/wiki/Christmastide'
         weekno = 1 + (christmas_point - dayofweek) // 7
-    elif christmas_point >= 12 and christmas_point < 40:
+    elif christmas_point >= 12 and easter_point <= -47:
         season = 'Epiphany'
         season_url = 'https://en.wikipedia.org/wiki/Epiphany_season'
-        weekno = 1 + (christmas_point-12-dayofweek) // 7
-    elif christmas_point >= 40 and easter_point <= -71:
-        # Period of Ordinary Time after Epiphany
-        season = 'Ordinary Time'
-        season_url = 'https://en.wikipedia.org/wiki/Ordinary_Time'
-        weekno = 1 + (christmas_point - 47) // 7
-    elif easter_point > -71 and easter_point <= -47:
-        season = 'before Lent'
-        season_url = 'https://en.wikipedia.org/wiki/Lent'
-        weekno = (easter_point + 47 - dayofweek) // 7
-    elif easter_point > -47 and easter_point < -7:
+        weekno = 1 + (christmas_point - 12 - dayofweek) // 7
+    elif easter_point >= -46 and easter_point < -7:
         season = 'Lent'
         season_url = 'https://en.wikipedia.org/wiki/Lent'
-        weekno = (easter_point+50-dayofweek) // 7
+        weekno = (easter_point + 50 - dayofweek) // 7
     elif easter_point >= -7 and easter_point < 0:
         season = 'Holy Week'
         season_url = 'https://en.wikipedia.org/wiki/Holy_Week'
@@ -104,85 +183,59 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     elif easter_point >= 0 and easter_point < 49:
         season = 'Easter'
         season_url = 'https://en.wikipedia.org/wiki/Eastertide'
-        weekno = 1+ easter_point // 7
+        weekno = 1 + easter_point // 7
     elif easter_point >= 49 and easter_point < 56:
-        # Period of Ordinary Time after Pentecost
+        # The week of the Day of Pentecost.
         season = 'Pentecost'
-        season_url = 'https://en.wikipedia.org/wiki/Ordinary_Time'
+        season_url = 'https://en.wikipedia.org/wiki/Pentecost'
         weekno = 0
-    elif christmas_point >= advent_sunday -28 and christmas_point < advent_sunday:
-        # "Before Advent" weeks
-        season = 'before Advent'
-        season_url = ''
-        weekno = (christmas_point - advent_sunday) // 7
     else:
-        # Period of Ordinary Time after Pentecost
-        season = 'Trinity'
+        # Season after Pentecost (Ordinary Time), from the first Sunday after
+        # Pentecost to the last Sunday before Advent.
+        season = 'Ordinary Time'
         season_url = 'https://en.wikipedia.org/wiki/Ordinary_Time'
-        weekno = (easter_point - 56 - dayofweek) // 7
+        weekno = 1 + (days - dayofweek - proper_anchor) // 7
     weekno = int(weekno) if int(weekno) != 0 else None
 
-    # Now, look for feasts.
-    feast_from_easter    = lookup_feast(easter_point)
-    feast_from_christmas = lookup_feast(10000+100*month+day)
-
-    if feast_from_easter:
-        possibles.append(feast_from_easter)
-
-    if feast_from_christmas:
-        possibles.append(feast_from_christmas)
-
-    # Maybe transferred from yesterday.
-    # Call recursively to look for yesterday feast and push to possibles
-    if transferred is False:
-        yestery, yesterm, yesterd = add_delta_days(days-1)
-        transferred_feast = liturgical_calendar(s_date=f"{yestery}-{yesterm}-{yesterd}", transferred=True)
-
-        if transferred_feast:
-            transferred_feast['name'] = transferred_feast['name'] + ' (transferred)'
-            # Sundays can't be transferred
-            if transferred_feast['prec'] != 5:
-                possibles.append(transferred_feast)
+    # Resolve fixed and movable observances, retaining every commemoration
+    # appointed for this date, including those carried past a Sunday or feast.
+    appointed, displaced = _calendar_observances(year)[f_date]
+    if transferred:
+        return tuple(dict(feast) for feast in displaced)
+    possibles.extend(dict(feast) for feast in appointed)
 
     # Handle Sundays. Every Sunday has some designation.
-    # weekno increments on a Sunday, so normally it can never be less than 1 on a Sunday
-    # except for seasons like Holy Week which don't have numbered Sundays, where weekno=None
     if weekno and dayofweek == 0:
-        possibles.append({ 'prec': 5, 'type': 'Sunday', 'name': sunday_name(season, weekno)})
-
-        # Special Sundays. Use prec 8 here so they have the ability to transfer other feasts
-        # e.g. Advent Sunday sometimes transfers St Andrew
-        # https://github.com/liturgical-app/liturgical-calendar/issues/64
+        # Special Sundays are appended first so they win the stable sort over the
+        # generic Sunday (both prec 8) when both are present.
         if christmas_point == advent_sunday:
-            possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "Advent Sunday",'colour': 'purple' })
-        elif christmas_point == advent_sunday-7:
+            possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "Advent Sunday", 'colour': 'purple' })
+        elif christmas_point == advent_sunday - 7:
             possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "Christ the King", 'colour': 'white' })
-        elif christmas_point == advent_sunday-21:
-            possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "Remembrance Sunday", 'colour': 'red' })
-
-    # So, which event takes priority?
+        elif christmas_point == baptism_sunday:
+            possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "The Baptism of our Lord", 'colour': 'white',
+                               'url': 'https://en.wikipedia.org/wiki/Baptism_of_the_Lord' })
+        elif christmas_point == all_saints_sunday:
+            possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': "All Saints' Sunday", 'colour': 'white',
+                               'url': 'https://en.wikipedia.org/wiki/All_Saints%27_Day' })
+        else:
+            if season == 'Ordinary Time':
+                possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': f"Proper {weekno}" })
+            else:
+                possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': sunday_name(season, weekno) })
+    # So, which event takes priority? Stable sort keeps insertion order for ties.
     possibles = sorted(possibles, key=lambda x: x['prec'], reverse=True)
 
-    if transferred:
-        # If two feasts coincided today, we were asked to find
-        # the one which got transferred.
-        # But Sundays don't get transferred!
-        try:
-            if possibles[0] and possibles[0]['prec'] == 5:
-                return None
-            return possibles[1]
-        except IndexError:
-            return None
-
-    # Get highest priority feast
-    try:
-        result = possibles.pop(0)
-    except IndexError:
-        result = { 'name': '', 'prec': 1 }
+    # A Principal Feast replaces the generic Sunday designation.
+    if possibles and possibles[0]['prec'] == 9:
+        possibles = [feast for feast in possibles if feast.get('type') != 'Sunday']
+    if not possibles:
+        possibles = [{ 'name': '', 'prec': 1 }]
 
     # Render a Week name with or without number
-    # Negative numbers are "before" weeks
-    if weekno and weekno > 0:
+    if season == 'Ordinary Time' and weekno and weekno > 0:
+        week = f"Proper {weekno}"
+    elif weekno and weekno > 0:
         week = f"{season} {weekno}"
     elif weekno and weekno < -1:
         weekno = abs(weekno)
@@ -192,72 +245,70 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     else:
         week = season
 
-    # Append season info regardless
-    result['season'] = season
-    result['season_url'] = season_url
-    result['week'] = week
-    result['date'] = f_date
+    results = []
+    for result in possibles:
+        # Append season info regardless
+        result['season'] = season
+        result['season_url'] = season_url
+        result['week'] = week
+        result['date'] = f_date
 
-    # Support for Refreshment Sundays, which are rose
-    if result['name'] == 'Advent 3':
-        result['colour'] = 'rose'
-        result['name'] = 'Gaudete Sunday'
-        result['url'] = 'https://en.wikipedia.org/wiki/Gaudete_Sunday'
-    elif result['name'] == 'Lent 4':
-        result['colour'] = 'rose'
-        result['name'] = 'Laetare Sunday'
-        result['url'] = 'https://en.wikipedia.org/wiki/Laetare_Sunday'
+        # Gaudete and Laetare Sundays are rose
+        if result['name'] == 'Advent 3':
+            result['colour'] = 'rose'
+            result['name'] = 'Gaudete Sunday'
+            result['url'] = 'https://en.wikipedia.org/wiki/Gaudete_Sunday'
+        elif result['name'] == 'Lent 4':
+            result['colour'] = 'rose'
+            result['name'] = 'Laetare Sunday'
+            result['url'] = 'https://en.wikipedia.org/wiki/Laetare_Sunday'
 
-    # If no colour is already set...
-    if result.get('colour') is None:
-        # If the priority is higher than a Lesser Festival, but not a Sunday...
-        if result['prec'] > 4 and result['prec'] != 5:
-            # It's a feast day.
-            # Feasts are generally white, unless marked differently.
-            # But martyrs are red
-            if result.get('martyr'):
-                result['colour'] = 'red'
+        # If no colour is already set...
+        if result.get('colour') is None:
+            # Any feast (Principal, Holy Day, Lesser Feast, Commemoration) is
+            # generally white, or red for martyrs, unless a colour is given in the
+            # data (e.g. Good Friday "not given", Maundy Thursday "white").
+            if result['prec'] >= 3 and result.get('type') != 'Sunday':
+                if result.get('martyr'):
+                    result['colour'] = 'red'
+                else:
+                    result['colour'] = 'white'
             else:
-                result['colour'] = 'white'
-        else:
-            # Not a feast day.
-            # Set a default colour for the season
-            if season == 'Advent':
-                result['colour'] = 'purple'
-            elif season == 'Christmas':
-                result['colour'] = 'white'
-            elif season == 'Epiphany':
-                result['colour'] = 'white'
-            elif season == 'Lent':
-                result['colour'] = 'purple'
-            elif season == 'Holy Week':
-                result['colour'] = 'red'
-            elif season == 'Easter':
-                result['colour'] = 'white'
-            else:
-                # The great fallback:
-                result['colour'] = 'green'
+                # Not a feast day: set a default colour for the season
+                if season == 'Advent':
+                    result['colour'] = 'purple'
+                elif season == 'Christmas':
+                    result['colour'] = 'white'
+                elif season == 'Epiphany':
+                    result['colour'] = 'white'
+                elif season == 'Lent':
+                    result['colour'] = 'purple'
+                elif season == 'Holy Week':
+                    result['colour'] = 'red'
+                elif season == 'Easter':
+                    result['colour'] = 'white'
+                else:
+                    # Ordinary Time
+                    result['colour'] = 'green'
 
-    # Set colour code
-    result['colourcode'] = colour_code(result['colour'])
-    result['colourcode_rgbw'] = colour_code_rgbw(result['colour'])
+        # Set colour code
+        result['colourcode'] = colour_code(result['colour'])
+        result['colourcode_rgbw'] = colour_code_rgbw(result['colour'])
 
-    # Ember days
-    result['ember'] = 0
-    # Observed on the Wednesdays, Fridays and Saturdays within the weeks before:
-    if dayofweek in [3, 5, 6]:
-        # - the Third Sunday of Advent
-        # - the Second Sunday of Lent
-        if result['week'] in ['Advent 2', 'Lent 1']:
-            result['ember'] = 1
-        # - the Sunday nearest to 29 June (179 days before Christmas, ±3 days to catch the nearest Sunday, -4 to catch Wednesday, -1 to limit to Saturday)
-        elif christmas_point in range(-186, -176):
-            result['ember'] = 1
-        # - the Sunday nearest to 29 September (87 days before Christmas ±3 days to catch the nearest Sunday, -4 to catch Wednesday, -1 to limit to Saturday)
-        elif christmas_point in range(-94, -85):
-            result['ember'] = 1
+        # Ember Days (BCP 1979, p. 17): the Wednesdays, Fridays and Saturdays
+        # after the First Sunday in Lent, the Day of Pentecost, Holy Cross Day
+        # (September 14), and December 13.
+        result['ember'] = 0
+        if dayofweek in [3, 5, 6]:
+            if week in ['Lent 1', 'Pentecost']:
+                result['ember'] = 1
+            elif (month, day) in _first_ember_days(year, 9, 14, (3, 5, 6)):
+                result['ember'] = 1
+            elif (month, day) in _first_ember_days(year, 12, 13, (3, 5, 6)):
+                result['ember'] = 1
 
-    return result
+        results.append(result)
+    return tuple(results)
 
 def main():
     """
@@ -271,8 +322,10 @@ def main():
         mydate = None
 
     info = liturgical_calendar(mydate)
-    for key, value in info.items():
-        print(key, ':', value)
+    for observance in info:
+        for key, value in observance.items():
+            print(key, ':', value)
+        print()
 
 if __name__ == '__main__':
     main()

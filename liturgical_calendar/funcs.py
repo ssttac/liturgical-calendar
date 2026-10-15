@@ -29,7 +29,10 @@ def get_easter(year: int) -> tuple:
 def get_advent_sunday(year: int) -> int:
     """
     Return date of Advent Sunday, in days relative to Christmas day
-    This is always negative as Advent Sunday is before Christmas day
+    This is always negative as Advent Sunday is before Christmas day.
+
+    The Sundays of Advent are always the four Sundays before Christmas
+    Day, whether it occurs on a Sunday or a weekday (BCP 1979, p. 15).
 
     Parameters
     ----------
@@ -40,7 +43,11 @@ def get_advent_sunday(year: int) -> int:
       offset: int
         The numnber of days that Advent Sunday falls before Christmas day
     """
-    return -(day_of_week(year,12,25) + 3*7)
+    day = day_of_week(year, 12, 25)
+    if day == 0:
+        # Christmas Day itself falls on a Sunday
+        return -28
+    return -(day + 3 * 7)
 
 def date_to_days(year: int, month: int, day: int) -> int:
     """
@@ -120,7 +127,7 @@ def add_delta_days(days: int) -> tuple:
 def sunday_name(season: str, weekno: int) -> str:
     """
     Docstring for sunday_name
-    
+
     :param season: Name of the liturgical season
     :type season: str
     :param weekno: Number of the week

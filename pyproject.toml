@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "liturgical-calendar"
+name = "liturgical-calendar-tec"
 version = "0.1.0"
-description = "Library to determine liturgical dates and colours for the Anglican Church of England"
-authors = ["Jonathan Gazeley <me@jonathangazeley.com>"]
+description = "Library to determine liturgical dates and colours for the Episcopal Church of the USA"
+authors = ["William Chen <william@willowcitrus.com>"]
 readme = "README.md"
 packages = [{include = "liturgical_calendar"}]
 
@@ -13,6 +13,7 @@ python-dateutil = "^2.8.2"
 [tool.poetry.group.dev.dependencies]
 pylint = ">=3"
 autopep8 = "^2.0.4"
+pytest = "^8"
 
 [build-system]
 requires = ["poetry-core"]

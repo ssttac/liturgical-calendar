@@ -29,6 +29,8 @@ jobs:
         run: poetry install
       - name: Run pylint
         run: "poetry run pylint --rcfile=.pylintrc liturgical_calendar"
+      - name: Run tests
+        run: poetry run pytest tests/
 
   build:
     if: github.event_name == 'pull_request'
