@@ -34,9 +34,7 @@ jobs:
       # build the package (wheel + sdist)
       - name: Build Python package
         run: poetry build
-      # publish to PyPI via trusted publishing (OIDC)
+      # publish to PyPI via trusted publishing (OIDC); for API-token auth instead,
+      # add a `with:` block with `password: ${{ secrets.PYPI_API_TOKEN }}`
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Optional: uncomment if you prefer API token auth
-          # password: ${{ secrets.PYPI_API_TOKEN }}
