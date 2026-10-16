@@ -1,3 +1,10 @@
+"""
+The Titles of the Seasons, Sundays, and Major Holy Days observed in this
+Church throughout the Year, as set out in the 1979 Book of Common Prayer
+(pp. 31-32; https://www.bcponline.org/General/calendar.html)
+"""
+
+
 # Sunday titles by (liturgical_cycle, week).
 SUNDAY_TITLES = {
     ('advent', 0): 'Last Sunday after Pentecost',

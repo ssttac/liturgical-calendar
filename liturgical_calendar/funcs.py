@@ -171,17 +171,15 @@ def liturgical_week(f_date: date) -> tuple:
             # Advent: the four Sundays before Christmas Day (BCP 1979, p. 15).
             week = round((_prev_sunday(f_date) - _prev_sunday(day_before)).days / 7) + 4
             return ('advent', week)
-        elif f_date <= epiphany_day - timedelta(days=1):
+        if f_date <= epiphany_day - timedelta(days=1):
             # Christmas Day and the Sundays after it.
             return ('christmas', (f_date - _prev_sunday(christmas_day)).days // 7)
-        else:
-            # Epiphany: its season runs to the Last Sunday after the Epiphany.
-            return ('epiphany', (f_date - _prev_sunday(epiphany_day)).days // 7)
-    else:
-        # The Sunday in which `f_date` falls, counted from Easter Day.
-        # Where week 7 is Easter Day to account for Lent
-        week = round((_prev_sunday(f_date) - easter_day).days / 7) + 7
-        return ('easter', week)
+        # Epiphany: its season runs to the Last Sunday after the Epiphany.
+        return ('epiphany', (f_date - _prev_sunday(epiphany_day)).days // 7)
+    # The Sunday in which `f_date` falls, counted from Easter Day.
+    # Where week 7 is Easter Day to account for Lent
+    week = round((_prev_sunday(f_date) - easter_day).days / 7) + 7
+    return ('easter', week)
 
 
 def season_week_name(season: str, weekno: int) -> str:
@@ -226,6 +224,17 @@ def sunday_name(f_date: date):
     cycle, week = liturgical_week(f_date)
     return SUNDAY_TITLES.get((cycle, week))
 
+def _weekday_after_title(f_date, cycle, week, title):
+    """Name an untitled weekday: the bare weekday name if the week has no
+    Sunday title, otherwise '{weekday} after {title}' (no article for weeks
+    titled with a festival) or '{weekday} after the {title}'."""
+    if not title:
+        return WEEKDAY_NAMES[f_date.weekday()]
+    if (cycle, week) in OMIT_ARTICLE:
+        return f'{WEEKDAY_NAMES[f_date.weekday()]} after {title}'
+    return f'{WEEKDAY_NAMES[f_date.weekday()]} after the {title}'
+
+
 def liturgical_day(f_date: date, occupant_name: str = None, occupant_is_fixed: bool = False) -> str:
     """
     The title of the day, derived from the Titles of the Seasons, Sundays
@@ -246,13 +255,15 @@ def liturgical_day(f_date: date, occupant_name: str = None, occupant_is_fixed: b
         The title of the day
     """
     if occupant_name is not None:
+        # A major observance occupies the date; only the date's own fixed
+        # Holy Day title can still overrule its name.
         if occupant_is_fixed:
             holy_day = HOLY_DAY_TITLES.get((f_date.month, f_date.day))
             if holy_day:
                 return holy_day
-            return occupant_name
         return occupant_name
     if f_date.weekday() == 6:
+        # A Sunday carries its own title.
         return sunday_name(f_date)
     holy_day = HOLY_DAY_TITLES.get((f_date.month, f_date.day))
     if holy_day:
@@ -261,12 +272,7 @@ def liturgical_day(f_date: date, occupant_name: str = None, occupant_is_fixed: b
     special = WEEKDAY_TITLES.get((cycle, week), {}).get(WEEKDAY_NAMES[f_date.weekday()])
     if special:
         return special
-    title = sunday_name(f_date)
-    if not title:
-        return WEEKDAY_NAMES[f_date.weekday()]
-    if (cycle, week) in OMIT_ARTICLE:
-        return f'{WEEKDAY_NAMES[f_date.weekday()]} after {title}'
-    return f'{WEEKDAY_NAMES[f_date.weekday()]} after the {title}'
+    return _weekday_after_title(f_date, cycle, week, sunday_name(f_date))
 def colour_code(colour: str) -> str:
     """
     Accept a colour name and return a hex colour code,
