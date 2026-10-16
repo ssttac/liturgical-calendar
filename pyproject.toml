@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "liturgical-calendar-tec"
-version = "0.1.0"
+version = "0.2.0"
 description = "Library to determine liturgical dates and colours for the Episcopal Church of the USA"
 authors = ["William Chen <william@willowcitrus.com>"]
 readme = "README.md"
