@@ -36,14 +36,14 @@ for today.
 ```console
 # Get info for today
 $ liturgical_calendar
-name : 
-prec : 1
+date : 2025-01-15
+liturgical_day : Wednesday after the First Sunday after the Epiphany
+sunday_name : First Sunday after the Epiphany
 season : Epiphany
 season_url : https://en.wikipedia.org/wiki/Epiphany_season
 week : Epiphany 1
-date : 2025-01-15
-sunday_name : First Sunday after the Epiphany
-liturgical_day : Wednesday after the First Sunday after the Epiphany
+name : 
+prec : 1
 colour : white
 colourcode : #fffff6
 colourcode_rgbw : (0, 0, 0, 255)
@@ -51,21 +51,37 @@ ember : 0
 
 # Get info for an arbitrary date
 $ liturgical_calendar 2025-07-04
-name : Independence Day (United States)
-colour : white
-url : https://en.wikipedia.org/wiki/Independence_Day_(United_States)
-prec : 7
-type : Holy Day
-type_url : https://en.wikipedia.org/wiki/The_Calendar_of_the_Church_Year
-source : BCP 1979
+date : 2025-07-04
+liturgical_day : Independence Day
+sunday_name : Third Sunday after Pentecost
 season : Ordinary Time
 season_url : https://en.wikipedia.org/wiki/Ordinary_Time
 week : Proper 8
-date : 2025-07-04
-sunday_name : Third Sunday after Pentecost
-liturgical_day : Independence Day
+name : Independence Day (United States)
+type : Holy Day
+type_url : https://en.wikipedia.org/wiki/The_Calendar_of_the_Church_Year
+prec : 7
+source : BCP 1979
+url : https://en.wikipedia.org/wiki/Independence_Day_(United_States)
+colour : white
 colourcode : #fffff6
 colourcode_rgbw : (0, 0, 0, 255)
+ember : 0
+
+# Get info for a Sunday
+$ liturgical_calendar 2026-10-25
+date : 2026-10-25
+liturgical_day : Twenty-Second Sunday after Pentecost
+sunday_name : Twenty-Second Sunday after Pentecost
+season : Ordinary Time
+season_url : https://en.wikipedia.org/wiki/Ordinary_Time
+week : Proper 25
+name : Proper 25
+type : Sunday
+prec : 8
+colour : green
+colourcode : #279942
+colourcode_rgbw : (7, 255, 15, 0)
 ember : 0
 ```
 

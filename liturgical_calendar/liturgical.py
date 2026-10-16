@@ -85,6 +85,19 @@ def _calendar_observances(year):
         current += timedelta(days=1)
     return appointments
 
+_RESULT_KEYS = ('date', 'liturgical_day', 'sunday_name', 'season', 'season_url',
+                'week', 'name', 'type', 'type_url', 'prec', 'source', 'martyr',
+                'url', 'colour', 'colourcode', 'colourcode_rgbw', 'ember')
+
+
+def _ordered_record(record: dict) -> dict:
+    """Rebuild a record dict with its keys in _RESULT_KEYS order."""
+    ordered = {key: record[key] for key in _RESULT_KEYS if key in record}
+    ordered.update({key: value for key, value in record.items()
+                    if key not in _RESULT_KEYS})
+    return ordered
+
+
 def liturgical_calendar(s_date: str, transferred: bool = False):
     """
     Return a precedence-ordered tuple of observance dictionaries for a date.
@@ -196,7 +209,7 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     # appointed for this date, including those carried past a Sunday or feast.
     appointed, displaced = _calendar_observances(year)[f_date]
     if transferred:
-        return tuple(dict(feast) for feast in displaced)
+        return tuple(_ordered_record(dict(feast)) for feast in displaced)
     possibles.extend(dict(feast) for feast in appointed)
 
     # Handle Sundays. Every Sunday has some designation.
@@ -269,11 +282,11 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
         # Gaudete and Laetare Sundays are rose
         if result['name'] == 'Advent 3':
             result['colour'] = 'rose'
-            result['name'] += ' (Gaudete Sunday)'
+            result['name'] = 'Gaudete Sunday'
             result['url'] = 'https://en.wikipedia.org/wiki/Gaudete_Sunday'
         elif result['name'] == 'Lent 4':
             result['colour'] = 'rose'
-            result['name'] += ' (Laetare Sunday)'
+            result['name'] = 'Laetare Sunday'
             result['url'] = 'https://en.wikipedia.org/wiki/Laetare_Sunday'
 
         # If no colour is already set...
@@ -320,7 +333,7 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
             elif (month, day) in _first_ember_days(year, 12, 13, (3, 5, 6)):
                 result['ember'] = 1
 
-        results.append(result)
+        results.append(_ordered_record(result))
     return tuple(results)
 
 def main():
