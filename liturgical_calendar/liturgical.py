@@ -9,7 +9,7 @@ Fasts (2024).
 import sys
 from datetime import datetime, date, timedelta
 from functools import lru_cache
-from .funcs import get_easter, get_advent_sunday, date_to_days, day_of_week, colour_code, colour_code_rgbw, sunday_name
+from .funcs import get_easter, get_advent_sunday, date_to_days, day_of_week, colour_code, colour_code_rgbw, season_week_name, sunday_name, liturgical_day
 from .feasts import lookup_feast
 
 ##########################################################################
@@ -137,11 +137,6 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     else:
         christmas_point = days - date_to_days(year - 1, 12, 25)
 
-    # First, figure out the season.
-    season = ''
-    season_url = ''
-    weekno = None
-
     advent_sunday = get_advent_sunday(year)
 
     # The First Sunday after the Epiphany is the Baptism of our Lord, and
@@ -222,7 +217,7 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
             if season == 'Ordinary Time':
                 possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': f"Proper {weekno}" })
             else:
-                possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': sunday_name(season, weekno) })
+                possibles.append({ 'prec': 8, 'type': 'Sunday', 'name': season_week_name(season, weekno) })
     # So, which event takes priority? Stable sort keeps insertion order for ties.
     possibles = sorted(possibles, key=lambda x: x['prec'], reverse=True)
 
@@ -245,6 +240,23 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
     else:
         week = season
 
+    # The Titles of the Seasons, Sundays and Major Holy Days (BCP 1979, pp. 31-32)
+    occupant = possibles[0] if possibles else None
+    occupant_is_major = occupant is not None and occupant.get('prec', 0) >= 7
+    fixed_today = lookup_feast(10000 + 100 * f_date.month + f_date.day)
+    occupant_is_fixed_today = (occupant_is_major and bool(fixed_today)
+                               and any(occupant.get('name') == feast['name'] for feast in fixed_today))
+    if f_date.weekday() == 6 and not occupant_is_fixed_today:
+        day_title = sunday_name(f_date)
+    elif occupant is not None and occupant_is_fixed_today:
+        # The day's own fixed feast (e.g. St Stephen on 26 December).
+        day_title = liturgical_day(f_date, occupant['name'], True)
+    elif occupant is not None and occupant_is_major:
+        # A movable feast or fast, or a transferred observance.
+        day_title = occupant['name']
+    else:
+        day_title = liturgical_day(f_date)
+
     results = []
     for result in possibles:
         # Append season info regardless
@@ -252,15 +264,16 @@ def liturgical_calendar(s_date: str, transferred: bool = False):
         result['season_url'] = season_url
         result['week'] = week
         result['date'] = f_date
-
+        result['sunday_name'] = sunday_name(f_date)
+        result['liturgical_day'] = day_title
         # Gaudete and Laetare Sundays are rose
         if result['name'] == 'Advent 3':
             result['colour'] = 'rose'
-            result['name'] = 'Gaudete Sunday'
+            result['name'] += ' (Gaudete Sunday)'
             result['url'] = 'https://en.wikipedia.org/wiki/Gaudete_Sunday'
         elif result['name'] == 'Lent 4':
             result['colour'] = 'rose'
-            result['name'] = 'Laetare Sunday'
+            result['name'] += ' (Laetare Sunday)'
             result['url'] = 'https://en.wikipedia.org/wiki/Laetare_Sunday'
 
         # If no colour is already set...

@@ -83,13 +83,29 @@ def test_all_saints_and_its_sunday():
 
 def test_gaudete_and_laetare_sundays_are_rose():
     """The Third Sunday of Advent and Fourth Sunday in Lent are rose."""
-    gaudete = liturgical_calendar("2025-12-14")[0]
-    assert gaudete["name"] == "Gaudete Sunday"
-    assert gaudete["colour"] == "rose"
-    laetare = liturgical_calendar("2025-03-30")[0]
-    assert laetare["name"] == "Laetare Sunday"
-    assert laetare["colour"] == "rose"
-
+    for date, title in ("2025-12-14", "Gaudete"), ("2026-12-13", "Gaudete"), ("2027-12-12", "Gaudete"):
+        gaudete = liturgical_calendar(date)[0]
+        assert gaudete["name"] == f"{title} Sunday"
+        assert gaudete["colour"] == "rose"
+        assert gaudete["sunday_name"] == "Third Sunday of Advent"
+        assert gaudete["liturgical_day"] == "Third Sunday of Advent"
+        assert gaudete["colourcode"] == "#eb597a"
+        assert gaudete["colourcode_rgbw"] == (255, 114, 177, 48)
+    for laetare_date in "2025-03-30", "2026-03-15", "2027-03-07":
+        laetare = liturgical_calendar(laetare_date)[0]
+        assert laetare["name"] == "Laetare Sunday"
+        assert laetare["colour"] == "rose"
+        assert laetare["sunday_name"] == "Fourth Sunday in Lent"
+        assert laetare["liturgical_day"] == "Fourth Sunday in Lent"
+    # No other Sunday is rose.
+    from datetime import date, timedelta
+    for y in (2025, 2026, 2027):
+        d = date(y, 1, 1)
+        while d.year == y:
+            if d.weekday() == 6:
+                r = liturgical_calendar(d)[0]
+                assert (r["colour"] == "rose") == (r["name"] in ("Gaudete Sunday", "Laetare Sunday"))
+            d += timedelta(days=1)
 
 def test_us_national_holy_days():
     """Independence Day (4 July) and Thanksgiving (4th Thursday in November)."""
@@ -218,3 +234,75 @@ def test_october_2026_episcopal_calendar():
     changed = liturgical_calendar("2026-10-05")
     changed[0]["name"] = "changed by caller"
     assert liturgical_calendar("2026-10-05")[0]["name"] == expected[5][0]
+
+
+def test_sunday_name_titles():
+    """sunday_name carries the BCP p. 31-32 title of the week's Sunday."""
+    # Sundays carry their own title...
+    assert liturgical_calendar("2026-10-25")[0]["sunday_name"] == "Twenty-Second Sunday after Pentecost"
+    assert liturgical_calendar("2026-12-20")[0]["sunday_name"] == "Fourth Sunday of Advent"
+    assert liturgical_calendar("2026-05-24")[0]["sunday_name"] == "Pentecost"
+    assert liturgical_calendar("2026-05-31")[0]["sunday_name"] == "Trinity Sunday"
+    assert liturgical_calendar("2026-11-22")[0]["sunday_name"] == "Last Sunday after Pentecost"
+    assert liturgical_calendar("2026-04-05")[0]["sunday_name"] == "Easter Day"
+    assert liturgical_calendar("2026-03-29")[0]["sunday_name"] == "Palm Sunday"
+    assert liturgical_calendar("2026-02-15")[0]["sunday_name"] == "Last Sunday after the Epiphany"
+    # ...and a weekday carries the title of the preceding (week's) Sunday.
+    assert liturgical_calendar("2026-10-15")[0]["sunday_name"] == "Twentieth Sunday after Pentecost"
+    assert liturgical_calendar("2026-05-27")[0]["sunday_name"] == "Pentecost"
+    assert liturgical_calendar("2026-12-30")[0]["sunday_name"] == "First Sunday after Christmas Day"
+    assert liturgical_calendar("2026-02-19")[0]["sunday_name"] == "Last Sunday after the Epiphany"
+    # Feast-anchored weeks carry the feast's title (2023-12-29 is keyed to
+    # Christmas itself, whence "Friday after Christmas").
+    assert liturgical_calendar("2023-12-29")[0]["sunday_name"] == "Christmas"
+    assert liturgical_calendar("2026-01-07")[0]["sunday_name"] == "Epiphany"
+
+
+def test_liturgical_day_titles():
+    """liturgical_day names each day per the BCP p. 31-32 titles."""
+    # A weekday is named for its week's Sunday; the week's own Sunday title
+    # needs no further wording.
+    assert liturgical_calendar("2026-05-27")[0]["liturgical_day"] == "Wednesday after Pentecost"
+    assert liturgical_calendar("2026-10-15")[0]["liturgical_day"] == "Thursday after the Twentieth Sunday after Pentecost"
+    # Lesser feasts never displace the day's title.
+    assert liturgical_calendar("2026-10-15")[0]["name"] == "Teresa of Avila, Mystic and Monastic Reformer, 1582"
+    # Christmas-season weekdays follow Christmas itself.
+    assert liturgical_calendar("2023-12-29")[0]["liturgical_day"] == "Friday after Christmas"
+    # Holy Week and Easter Week carry their own titled days.
+    assert liturgical_calendar("2026-03-30")[0]["liturgical_day"] == "Monday in Holy Week"
+    assert liturgical_calendar("2026-04-06")[0]["liturgical_day"] == "Monday in Easter Week"
+    assert liturgical_calendar("2026-04-02")[0]["liturgical_day"] == "Maundy Thursday"
+    assert liturgical_calendar("2026-04-03")[0]["liturgical_day"] == "Good Friday"
+    assert liturgical_calendar("2026-04-04")[0]["liturgical_day"] == "Holy Saturday"
+    assert liturgical_calendar("2026-02-19")[0]["liturgical_day"] == "Thursday after Ash Wednesday"
+
+
+def test_liturgical_day_leaves_lff_saints_alone():
+    """Lesser Feasts change the name field but not the day's title."""
+    result = liturgical_calendar("2023-12-29")[0]
+    assert result["name"] == "Thomas Becket, Archbishop of Canterbury and Martyr, 1170"
+    assert result["liturgical_day"] == "Friday after Christmas"
+
+
+def test_liturgical_day_of_titled_holy_days():
+    """A titled Holy Day carries its own title; transfers keep theirs."""
+    assert liturgical_calendar("2026-12-26")[0]["liturgical_day"] == "Feast of St. Stephen"
+    assert liturgical_calendar("2025-11-01")[0]["liturgical_day"] == "All Saints' Day"
+    assert liturgical_calendar("2025-02-02")[0]["liturgical_day"] == "The Presentation of Our Lord Jesus Christ in the Temple"
+    assert liturgical_calendar("2025-09-15")[0]["liturgical_day"] == "Holy Cross Day (transferred)"
+    assert liturgical_calendar("2025-11-27")[0]["liturgical_day"] == "Thanksgiving Day"
+    # The Sunday title remains that of the week's Sunday even when the fixed
+    # feast is displaced from it (26 December 2021 is the First Sunday after
+    # Christmas Day; St Stephen transfers away).
+    assert liturgical_calendar("2021-12-26")[0]["liturgical_day"] == "First Sunday after Christmas Day"
+    assert liturgical_calendar("2021-12-26")[0]["sunday_name"] == "First Sunday after Christmas Day"
+
+
+def test_sunday_name_survives_movable_feasts():
+    """A movable Principal Feast on a Sunday keeps the Sunday's own title."""
+    assert liturgical_calendar("2026-05-24")[0]["liturgical_day"] == "Pentecost"
+    assert liturgical_calendar("2026-05-31")[0]["liturgical_day"] == "Trinity Sunday"
+    # Every field carries the two new keys on every record of the date.
+    for item in liturgical_calendar("2026-12-26"):
+        assert "sunday_name" in item
+        assert item["liturgical_day"] == "Feast of St. Stephen"

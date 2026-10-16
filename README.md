@@ -42,6 +42,8 @@ season : Epiphany
 season_url : https://en.wikipedia.org/wiki/Epiphany_season
 week : Epiphany 1
 date : 2025-01-15
+sunday_name : First Sunday after the Epiphany
+liturgical_day : Wednesday after the First Sunday after the Epiphany
 colour : white
 colourcode : #fffff6
 colourcode_rgbw : (0, 0, 0, 255)
@@ -60,6 +62,8 @@ season : Ordinary Time
 season_url : https://en.wikipedia.org/wiki/Ordinary_Time
 week : Proper 8
 date : 2025-07-04
+sunday_name : Third Sunday after Pentecost
+liturgical_day : Independence Day
 colourcode : #fffff6
 colourcode_rgbw : (0, 0, 0, 255)
 ember : 0
